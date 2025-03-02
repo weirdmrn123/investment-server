@@ -7,10 +7,11 @@ import uvicorn
 from dotenv import load_dotenv
 import os
 import random
-import redis
+# import redis
 import resend
 from pydantic import BaseModel
 from typing import Optional
+from cachetools import TTLCache
 
 # Load environment variables
 load_dotenv()
@@ -67,9 +68,9 @@ def get_db():
         db.close()
 
 # Initialize Redis for OTP storage
-redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+# redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
-resend.api_key = "re_Pv24onkX_96jdcyWNQX2pvPreCjqBBnu1"  # Correct way
+resend.api_key = os.getenv("RESEND_API_KEY") # Correct way
 
 @app.get("/")
 def read_root():
@@ -132,15 +133,16 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     raise HTTPException(status_code=401, detail="Invalid email or password")
 
 
+otp_cache = TTLCache(maxsize=1000, ttl=300) # Store OTP for 5 minutes
 
 class EmailRequest(BaseModel):
     email: str
 
 @app.post("/send-otp")
 def send_otp(request: EmailRequest):
-    email = request.email
+    email = request.email 
     otp = random.randint(100000, 999999)
-    redis_client.setex(email, 300, otp)  # Store OTP for 5 minutes
+    otp_cache[email] = otp # Store OTP in the in-memory cache
     
     try:
         resend.Emails.send({
@@ -161,7 +163,7 @@ class OTPVerification(BaseModel):
 def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
     email = request.email
     otp = request.otp
-    stored_otp = redis_client.get(email)
+    stored_otp = otp_cache.get(email)
     if stored_otp and int(stored_otp) == otp:
         redis_client.delete(email)  # Remove OTP after successful verification
         user = db.query(User).filter(User.email == email).first()

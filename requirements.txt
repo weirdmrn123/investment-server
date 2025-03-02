@@ -4,3 +4,4 @@ python-dotenv
 redis
 resend
 sqlalchemy
+cachetools
