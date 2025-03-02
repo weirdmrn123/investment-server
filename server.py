@@ -99,8 +99,10 @@ def register(request: UserRequest, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == request.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    if existing_user.mobile == request.mobile:
-            raise HTTPException(status_code=400, detail="Mobile number already registered")
+    
+    existing_mobile_user = db.query(User).filter(User.mobile == request.mobile).first()
+    if existing_mobile_user:
+        raise HTTPException(status_code=400, detail="Mobile number already registered")
 
     # Create new user
     new_user = User(
