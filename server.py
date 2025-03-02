@@ -99,6 +99,8 @@ def register(request: UserRequest, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == request.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+    if existing_user.mobile == request.mobile:
+            raise HTTPException(status_code=400, detail="Mobile number already registered")
 
     # Create new user
     new_user = User(
@@ -165,7 +167,7 @@ def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
     otp = request.otp
     stored_otp = otp_cache.get(email)
     if stored_otp and int(stored_otp) == otp:
-        redis_client.delete(email)  # Remove OTP after successful verification
+        otp_cache.pop(email, None)  # Remove OTP from cache after successful verification
         user = db.query(User).filter(User.email == email).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
