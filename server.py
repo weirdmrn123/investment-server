@@ -48,7 +48,7 @@ class User(Base):
     salary_range = Column(String, nullable=False)  # Optional
     password = Column(String, nullable=False)
     
-    withdrawable_balance = Column(Numeric(10, 2), default=0)
+    withdrawable_balance = Column(Numeric(10, 2), default=50)
     capital_invested = Column(Numeric(10, 2), default=0)
     profit = Column(Numeric(10, 2), default=0)
     investment_plan = Column(String, nullable=False, default="No active plan")  # Default plan
