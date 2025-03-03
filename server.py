@@ -143,7 +143,21 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
 
     if user and verify_password(request.password, user.password):  # Use password verification
-        return {"message": "Login successful"}
+        return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "gender": user.gender,
+        "country": user.country,
+        "mobile": user.mobile,
+        "address": user.address,
+        "withdrawable_balance": user.withdrawable_balance,
+        "capital_invested": user.capital_invested,
+        "profit": user.profit,
+        "investment_plan": user.investment_plan,
+        "account_status": user.account_status,
+        "kyc": user.kyc
+    }
     
     raise HTTPException(status_code=401, detail="Invalid email or password")
 
