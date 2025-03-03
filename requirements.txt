@@ -5,3 +5,5 @@ redis
 resend
 sqlalchemy
 cachetools
+psycopg2-binary
+bcrypt

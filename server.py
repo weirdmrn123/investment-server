@@ -1,13 +1,13 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy import Column, Integer, Numeric, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 import uvicorn
 from dotenv import load_dotenv
 import os
 import random
-# import redis
+import bcrypt 
 import resend
 from pydantic import BaseModel
 from typing import Optional
@@ -28,8 +28,8 @@ app.add_middleware(
 )
 
 # Database Setup
-DATABASE_URL = "sqlite:///./users.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -45,12 +45,12 @@ class User(Base):
     mobile = Column(String, unique=True, nullable=False)
     employment_status = Column(String, nullable=False)  # Employed, Unemployed, etc.
     industry = Column(String, nullable=True)  # Optional
-    salary_range = Column(String, nullable=True)  # Optional
+    salary_range = Column(Numeric(10, 2), nullable=True)  # Optional
     password = Column(String, nullable=False)
     
-    withdrawable_balance = Column(Integer, default=0)
-    capital_invested = Column(Integer, default=0)
-    profit = Column(Integer, default=0)
+    withdrawable_balance = Column(Numeric(10, 2), default=0)
+    capital_invested = Column(Numeric(10, 2), default=0)
+    profit = Column(Numeric(10, 2), default=0)
     investment_plan = Column(String, nullable=False, default="No active plan")  # Default plan
     account_status = Column(String, nullable=False, default="Active")  # Default status
     kyc = Column(String, nullable=False, default="Not Verified")  # Default status
@@ -80,6 +80,14 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
+def hash_password(password: str) -> str:
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+# Verify password
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
 class UserRequest(BaseModel):
     full_name: str
     email: str
@@ -103,6 +111,8 @@ def register(request: UserRequest, db: Session = Depends(get_db)):
     existing_mobile_user = db.query(User).filter(User.mobile == request.mobile).first()
     if existing_mobile_user:
         raise HTTPException(status_code=400, detail="Mobile number already registered")
+    
+    hashed_password = hash_password(request.password)
 
     # Create new user
     new_user = User(
@@ -115,7 +125,7 @@ def register(request: UserRequest, db: Session = Depends(get_db)):
         employment_status=request.employment_status,
         industry=request.industry,
         salary_range=request.salary_range,
-        password=request.password,  # Consider hashing the password
+        password=hashed_password,  # Consider hashing the password
     )
 
     # Save user to the database
@@ -130,8 +140,9 @@ class LoginRequest(BaseModel):
 
 @app.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == request.email, User.password == request.password).first()
-    if user:
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if user and verify_password(request.password, user.password):  # Use password verification
         return {"message": "Login successful"}
     
     raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -236,6 +247,11 @@ def update_user(email: str, request: UserUpdateRequest, db: Session = Depends(ge
 
     # Update fields if provided
     update_data = request.dict(exclude_unset=True)
+
+    # If updating password, hash it before saving
+    if "password" in update_data:
+        update_data["password"] = hash_password(update_data["password"])
+        
     for key, value in update_data.items():
         setattr(user, key, value)
 
