@@ -45,7 +45,7 @@ class User(Base):
     mobile = Column(String, unique=True, nullable=False)
     employment_status = Column(String, nullable=False)  # Employed, Unemployed, etc.
     industry = Column(String, nullable=True)  # Optional
-    salary_range = Column(Numeric(10, 2), nullable=True)  # Optional
+    salary_range = Column(String, nullable=False)  # Optional
     password = Column(String, nullable=False)
     
     withdrawable_balance = Column(Numeric(10, 2), default=0)
@@ -251,7 +251,7 @@ def update_user(email: str, request: UserUpdateRequest, db: Session = Depends(ge
     # If updating password, hash it before saving
     if "password" in update_data:
         update_data["password"] = hash_password(update_data["password"])
-        
+
     for key, value in update_data.items():
         setattr(user, key, value)
 
