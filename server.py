@@ -129,24 +129,56 @@ class UserRequest(BaseModel):
 @app.post("/register")
 def register(
     request: UserRequest, 
-    db: Session = Depends(get_db),
-    x_project_type: str = Header("default") 
-    ):
-
-    TableModel = NewProjectUser if x_project_type == "new_project" else User  
+    db: Session = Depends(get_db) 
+    ): 
     # Check if user already exists
-    existing_user = db.query(TableModel).filter(TableModel.email == request.email).first()
+    existing_user = db.query(User).filter(User.email == request.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    existing_mobile_user = db.query(TableModel).filter(TableModel.mobile == request.mobile).first()
+    existing_mobile_user = db.query(User).filter(User.mobile == request.mobile).first()
     if existing_mobile_user:
         raise HTTPException(status_code=400, detail="Mobile number already registered")
     
     hashed_password = hash_password(request.password)
 
     # Create new user
-    new_user = TableModel(
+    new_user = User(
+        full_name=request.full_name,
+        email=request.email,
+        gender=request.gender,
+        country=request.country,
+        address=request.address,
+        mobile=request.mobile,
+        employment_status=request.employment_status,
+        industry=request.industry,
+        salary_range=request.salary_range,
+        password=hashed_password,  # Consider hashing the password
+    )
+
+    # Save user to the database
+    db.add(new_user)
+    db.commit()
+    return {"message": "Registration successful"}
+
+@app.post("/wealth/register")
+def register(
+    request: UserRequest, 
+    db: Session = Depends(get_db) 
+    ): 
+    # Check if user already exists
+    existing_user = db.query(NewProjectUser).filter(NewProjectUser.email == request.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    existing_mobile_user = db.query(NewProjectUser).filter(NewProjectUser.mobile == request.mobile).first()
+    if existing_mobile_user:
+        raise HTTPException(status_code=400, detail="Mobile number already registered")
+    
+    hashed_password = hash_password(request.password)
+
+    # Create new user
+    new_user = NewProjectUser(
         full_name=request.full_name,
         email=request.email,
         gender=request.gender,
@@ -171,11 +203,9 @@ class LoginRequest(BaseModel):
 
 @app.post("/login")
 def login(request: LoginRequest, 
-          db: Session = Depends(get_db),
-          x_project_type: str = Header("default") 
+          db: Session = Depends(get_db)
           ):
-    TableModel = NewProjectUser if x_project_type == "new_project" else User 
-    user = db.query(TableModel).filter(TableModel.email == request.email).first()
+    user = db.query(User).filter(User.email == request.email).first()
 
     if user and verify_password(request.password, user.password):  # Use password verification
         return {
@@ -196,8 +226,31 @@ def login(request: LoginRequest,
     
     raise HTTPException(status_code=401, detail="Invalid email or password")
 
+@app.post("/wealth/login")
+def login(request: LoginRequest, 
+          db: Session = Depends(get_db)
+          ):
+    user = db.query(NewProjectUser).filter(NewProjectUser.email == request.email).first()
 
-otp_cache = TTLCache(maxsize=1000, ttl=300) # Store OTP for 5 minutes
+    if user and verify_password(request.password, user.password):  # Use password verification
+        return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "gender": user.gender,
+        "country": user.country,
+        "mobile": user.mobile,
+        "address": user.address,
+        "withdrawable_balance": user.withdrawable_balance,
+        "capital_invested": user.capital_invested,
+        "profit": user.profit,
+        "investment_plan": user.investment_plan,
+        "account_status": user.account_status,
+        "kyc": user.kyc
+    }
+    
+    raise HTTPException(status_code=401, detail="Invalid email or password")
+
 
 class EmailRequest(BaseModel):
     email: str
@@ -256,11 +309,9 @@ def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
 @app.get("/users/{email}")
 def get_user_by_email(
     email: str, 
-    db: Session = Depends(get_db),
-    x_project_type: str = Header("default") 
+    db: Session = Depends(get_db)
     ):
-    TableModel = NewProjectUser if x_project_type == "new_project" else User
-    user = db.query(TableModel).filter(TableModel.email == email).first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -298,12 +349,9 @@ class UserUpdateRequest(BaseModel):
 def update_user(
     email: str, 
     request: UserUpdateRequest, 
-    db: Session = Depends(get_db),
-    x_project_type: str = Header("default") 
+    db: Session = Depends(get_db)
     ):
-
-    TableModel = NewProjectUser if x_project_type == "new_project" else User
-    user = db.query(TableModel).filter(TableModel.email == email).first()
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
