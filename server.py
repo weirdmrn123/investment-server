@@ -9,9 +9,11 @@ import os
 import random
 import bcrypt 
 import resend
+import redis
 from pydantic import BaseModel
 from typing import Optional
 from cachetools import TTLCache
+from fastapi import Header
 
 # Load environment variables
 load_dotenv()
@@ -33,9 +35,31 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
 # Define User Model
 class User(Base):
     __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String, nullable=False)  # Full Name
+    email = Column(String, unique=True, index=True, nullable=False)
+    gender = Column(String, nullable=False)  # Male/Female
+    country = Column(String, nullable=False)
+    address = Column(String, nullable=False)
+    mobile = Column(String, unique=True, nullable=False)
+    employment_status = Column(String, nullable=False)  # Employed, Unemployed, etc.
+    industry = Column(String, nullable=True)  # Optional
+    salary_range = Column(String, nullable=False)  # Optional
+    password = Column(String, nullable=False)
+    
+    withdrawable_balance = Column(Numeric(10, 2), default=50)
+    capital_invested = Column(Numeric(10, 2), default=0)
+    profit = Column(Numeric(10, 2), default=0)
+    investment_plan = Column(String, nullable=False, default="No active plan")  # Default plan
+    account_status = Column(String, nullable=False, default="Active")  # Default status
+    kyc = Column(String, nullable=False, default="Not Verified")  # Default status
+
+class NewProjectUser(Base):
+    __tablename__ = "wealth"
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String, nullable=False)  # Full Name
     email = Column(String, unique=True, index=True, nullable=False)
@@ -68,7 +92,8 @@ def get_db():
         db.close()
 
 # Initialize Redis for OTP storage
-# redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
 resend.api_key = os.getenv("RESEND_API_KEY") # Correct way
 
@@ -81,8 +106,8 @@ def health_check():
     return {"status": "ok"}
 
 def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
 
 # Verify password
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -102,20 +127,26 @@ class UserRequest(BaseModel):
 
 
 @app.post("/register")
-def register(request: UserRequest, db: Session = Depends(get_db)):
+def register(
+    request: UserRequest, 
+    db: Session = Depends(get_db),
+    x_project_type: str = Header("default") 
+    ):
+
+    TableModel = NewProjectUser if x_project_type == "new_project" else User  
     # Check if user already exists
-    existing_user = db.query(User).filter(User.email == request.email).first()
+    existing_user = db.query(TableModel).filter(TableModel.email == request.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    existing_mobile_user = db.query(User).filter(User.mobile == request.mobile).first()
+    existing_mobile_user = db.query(TableModel).filter(TableModel.mobile == request.mobile).first()
     if existing_mobile_user:
         raise HTTPException(status_code=400, detail="Mobile number already registered")
     
     hashed_password = hash_password(request.password)
 
     # Create new user
-    new_user = User(
+    new_user = TableModel(
         full_name=request.full_name,
         email=request.email,
         gender=request.gender,
@@ -139,8 +170,12 @@ class LoginRequest(BaseModel):
 
 
 @app.post("/login")
-def login(request: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == request.email).first()
+def login(request: LoginRequest, 
+          db: Session = Depends(get_db),
+          x_project_type: str = Header("default") 
+          ):
+    TableModel = NewProjectUser if x_project_type == "new_project" else User 
+    user = db.query(TableModel).filter(TableModel.email == request.email).first()
 
     if user and verify_password(request.password, user.password):  # Use password verification
         return {
@@ -171,8 +206,8 @@ class EmailRequest(BaseModel):
 def send_otp(request: EmailRequest):
     email = request.email 
     otp = random.randint(100000, 999999)
-    otp_cache[email] = otp # Store OTP in the in-memory cache
-    
+    # otp_cache[email] = otp # Store OTP in the in-memory cache
+    redis_client.setex(email, 300, otp) 
     try:
         resend.Emails.send({
             "from": "onboarding@resend.dev",
@@ -192,7 +227,8 @@ class OTPVerification(BaseModel):
 def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
     email = request.email
     otp = request.otp
-    stored_otp = otp_cache.get(email)
+    # stored_otp = otp_cache.get(email)
+    stored_otp = redis_client.get(email)
     if stored_otp and int(stored_otp) == otp:
         otp_cache.pop(email, None)  # Remove OTP from cache after successful verification
         user = db.query(User).filter(User.email == email).first()
@@ -218,8 +254,13 @@ def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     
 @app.get("/users/{email}")
-def get_user_by_email(email: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == email).first()
+def get_user_by_email(
+    email: str, 
+    db: Session = Depends(get_db),
+    x_project_type: str = Header("default") 
+    ):
+    TableModel = NewProjectUser if x_project_type == "new_project" else User
+    user = db.query(TableModel).filter(TableModel.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -254,8 +295,15 @@ class UserUpdateRequest(BaseModel):
     kyc: Optional[str] = None
 
 @app.put("/edit/{email}")
-def update_user(email: str, request: UserUpdateRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == email).first()
+def update_user(
+    email: str, 
+    request: UserUpdateRequest, 
+    db: Session = Depends(get_db),
+    x_project_type: str = Header("default") 
+    ):
+
+    TableModel = NewProjectUser if x_project_type == "new_project" else User
+    user = db.query(TableModel).filter(TableModel.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
