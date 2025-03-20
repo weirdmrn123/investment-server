@@ -7,6 +7,7 @@ import uvicorn
 from dotenv import load_dotenv
 import os
 import random
+from typing import List
 import bcrypt 
 import resend
 import redis
@@ -306,11 +307,31 @@ def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
     else:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
     
-@app.get("/wealth/allusers")
-def get_all_users( db: Session = Depends(get_db)):
-    users = db.query(NewProjectUser).all()
+class NewProjectUserResponse(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    gender: str
+    country: str
+    address: str
+    mobile: str
+    employment_status: str
+    industry: str
+    salary_range: str
+    withdrawable_balance: float
+    capital_invested: float
+    profit: float
+    investment_plan: str
+    account_status: str
+    kyc: str
 
-    return users
+    class Config:
+        from_attributes = True  # Needed for SQLAlchemy model conversion
+
+@app.get("/wealth/allusers", response_model=List[NewProjectUserResponse])
+def get_all_users(db: Session = Depends(get_db)):
+    users = db.query(NewProjectUser).all()
+    return users  # FastAPI will automatically serialize the response
 
     
 @app.get("/users/{email}")
