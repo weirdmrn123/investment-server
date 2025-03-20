@@ -379,7 +379,7 @@ def update_user(
     request: UserUpdateRequest, 
     db: Session = Depends(get_db)
     ):
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(NewProjectUser).filter(NewProjectUser.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -398,9 +398,9 @@ def update_user(
     
     return {"message": "User updated successfully", "user": update_data}
 
-@app.delete("/users/{email}")
+@app.delete("/delete/{email}")
 def delete_user(email: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(NewProjectUser).filter(NewProjectUser.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
