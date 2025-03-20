@@ -283,7 +283,7 @@ def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
     # stored_otp = otp_cache.get(email)
     stored_otp = redis_client.get(email)
     if stored_otp and int(stored_otp) == otp:
-        otp_cache.pop(email, None)  # Remove OTP from cache after successful verification
+        redis_client.delete(email)  # Remove OTP from cache after successful verification
         user = db.query(User).filter(User.email == email).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -305,6 +305,13 @@ def verify_otp(request: OTPVerification, db: Session = Depends(get_db)):
 
     else:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    
+@app.get("/wealth/allusers")
+def get_all_users( db: Session = Depends(get_db)):
+    users = db.query(NewProjectUser).all()
+
+    return users
+
     
 @app.get("/users/{email}")
 def get_user_by_email(
